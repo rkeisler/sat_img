@@ -2,7 +2,8 @@ import numpy as np
 from urllib import urlretrieve
 import pdb
 http_base='http://api.tiles.mapbox.com/v2/rkeisler.gh8kebdo/'
-savepath='/farmshare/user_data/rkeisler/img/'
+#savepath='/farmshare/user_data/rkeisler/img/'
+savepath='/Users/rkeisler/Desktop/satellite/img/'
 
 def latlong_to_xyz(lat_deg, lon_deg, zoom):
     lat_rad = lat_deg*np.pi/180.
@@ -35,6 +36,13 @@ def download_one(x,y,zoom,prefix='tmp'):
     url=http_base+xyz_to_ZXY_string(x,y,zoom)+'.png'
     savename=savepath+xyz_to_savename(x,y,zoom,prefix=prefix)
     urlretrieve(url, savename)
+
+def download_chunk(name, zoom, download=True):
+    d=define_chunk(name)
+    download_rectangle(d['lat1'],d['lat2'],
+                       d['lon1'],d['lon2'],
+                       zoom, prefix=d['prefix'], 
+                       download=download)
     
 def download_rectangle(lat1, lat2, lon1, lon2, 
                        zoom, prefix='tmp', download=True):
@@ -52,7 +60,7 @@ def download_rectangle(lat1, lat2, lon1, lon2,
             if download: download_one(x_tmp,y_tmp,zoom,prefix=prefix)
     return
 
-def define_chunks():
+def define_chunk(name):
     sf1=dict(prefix='sf1',
              lat1=30.0, lax_max=30.1, 
              lon1=-50.0, lon2=-49.9)
@@ -63,10 +71,13 @@ def define_chunks():
              lon1=hms_to_deg(-87,43,44.02),
              lon2=hms_to_deg(-87,33,53.51))
 
-    atx=dict(prefix='atx')
-    
-    chunks=dict(sf1=sf1, chi=chi)
-    return chunks
+    atx=dict(prefix='atx',
+             lat1=hms_to_deg(30,20,21.95),
+             lat2=hms_to_deg(30,12,32.97),
+             lon1=hms_to_deg(-97,50,33.81),
+             lon2=hms_to_deg(-97,38,12.31))
+    chunks=dict(sf1=sf1, chi=chi, atx=atx)
+    return chunks[name]
 
 def hms_to_deg(hour, min, sec):
     return np.sign(hour)*(np.abs(hour)+min/60.+sec/3600.)

@@ -1,4 +1,4 @@
 import sat
-sat.download_chunk('atx')
-sat.download_chunk('chi')
+sat.download_chunk('atx',19)
+
 
