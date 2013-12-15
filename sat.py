@@ -228,7 +228,7 @@ def images_to_batches(prefix='atx', nside=32):
         labels = y[ibatch*nimg_per_batch:(ibatch+1)*nimg_per_batch]
         sum_data += np.sum(data,axis=1)
         print '...dumping...'
-        output = {'data':np.array(data,dtype=np.float16), 
+        output = {'data':np.array(data,dtype=np.uint8),
                   'labels':list(np.array(labels, dtype=np.int))}
         pickle.dump(output, open('batches/data_batch_%i'%ibatch, 'w'))
     mean_data = 1.*sum_data/nbatches/nimg_per_batch
