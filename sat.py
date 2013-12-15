@@ -160,10 +160,8 @@ def read_label(prefix):
 
 
 
-def try_train(nside=32):
+def try_train(prefix='atx', nside=32):
     from PIL import Image
-    from scipy.ndimage import zoom
-    prefix='atx'
     tmp=read_label(prefix)
     X=[]
     y=[]
@@ -198,6 +196,45 @@ def try_train(nside=32):
     pl.title('AUC: %0.3f'%auc)
     pdb.set_trace()
         
-    
+def images_to_batches(prefix='atx', nside=32):
+    import pickle
+    from glob import glob
+    from PIL import Image
+    from os import system
+    tmp=read_label(prefix)
+    X=[]
+    y=[]
+    for name,label in tmp.iteritems():
+        img_name = imgpath+name
+        img = Image.open(img_name)
+        if nside!=256: img=img.resize((nside,nside),Image.ANTIALIAS)
+        img = np.array(img)
+        img = np.rollaxis(img, 2)  # only for cuda convnet
+        img = img.reshape(-1)
+        X.append(img)
+        y.append(label>0)
+    X = np.vstack(np.array(X))
+    y = np.array(y).astype(int)
+
+    nbatches = 2
+    nimg_total, nfeatures = X.shape
+    nimg_per_batch = np.floor(1.*nimg_total/nbatches)
+    system('rm batches/data_batch*')
+
+    global_counter = -1
+    sum_data = np.zeros(nfeatures)
+    for ibatch in np.arange(nbatches):
+        data = np.array(X[ibatch*nimg_per_batch:(ibatch+1)*nimg_per_batch], dtype=np.float).T
+        labels = y[ibatch*nimg_per_batch:(ibatch+1)*nimg_per_batch]
+        sum_data += np.sum(data,axis=1)
+        print '...dumping...'
+        output = {'data':np.array(data,dtype=np.float16), 
+                  'labels':np.array(labels, dtype=np.float16)}
+        pickle.dump(output, open('batches/data_batch_%i'%ibatch, 'w'))
+    mean_data = 1.*sum_data/nbatches/nimg_per_batch
+    meta = {'num_cases_per_batch':nimg_per_batch, 
+            'num_vis':nfeatures, 
+            'data_mean':mean_data}
+    pickle.dump(meta, open('batches/batches.meta', 'w'))    
 
 
