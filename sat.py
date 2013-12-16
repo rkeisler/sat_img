@@ -188,7 +188,7 @@ def load_labeled(prefix='atx', nside=32, quick=True):
 
 def get_features(X_img, ncolors=2):
     nside=X_img.shape[1]
-    sigmas=np.array([2,4,8,16])*nside/64.
+    sigmas=np.array([4,8,16])*nside/32.
     colors=[]; 
     for i in range(ncolors):
         colors.append(np.array([154, 211,  205]) + np.random.randint(-10,high=10,size=3))
@@ -212,9 +212,9 @@ def get_features(X_img, ncolors=2):
     return features
 
 
-def get_features2(X_img, ncolors=60, thresh=30):
+def get_features2(X_img, ncolors=40, thresh=20):
     nside=X_img.shape[1]
-    sigmas=np.array([5,10])*nside/64.
+    sigmas=np.array([1,3,5])*nside/32.
 
     # get smoothing kernel
     x,y=np.mgrid[0:nside,0:nside]-np.mean(np.arange(nside))
@@ -223,7 +223,8 @@ def get_features2(X_img, ncolors=60, thresh=30):
     # get colors
     colors=[]; 
     for i in range(ncolors):
-        colors.append(np.array([154, 211,  205]) + np.random.randint(-50,high=40,size=3))
+        colors.append(np.array([154, 211,  205]) + np.random.randint(-50,high=30,size=3))
+        colors.append(np.random.randint(0,high=255,size=3))
     features = []
 
     for color in colors:
@@ -271,8 +272,8 @@ def try_train(prefix='atx', nside=32):
     from sklearn.cross_validation import train_test_split
     from sklearn import metrics
 
-    rf = ExtraTreesClassifier(n_estimators=200, n_jobs=6, max_depth=None, max_features=0.1)
-    X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=0.5)
+    rf = ExtraTreesClassifier(n_estimators=200, n_jobs=6, max_depth=None, max_features=0.05)
+    X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=0.9)
     print '...fitting...'
     rf.fit(X_train, y_train)
     y_proba = rf.predict_proba(X_test)
@@ -329,11 +330,13 @@ def images_to_batches(prefix='atx', nside=32):
 
 
 def blue_gaussian():
-    blue = np.array([154, 211,  205]) + np.random.randint(-20,high=20,size=3)
-    nside=64
+    blue = np.array([154, 211,  205]) + np.random.randint(-150,high=30,size=3)
+    blue = np.random.randint(0,high=255,size=3)
+    nside=32
     x,y=np.mgrid[0:nside,0:nside]-np.mean(np.arange(nside))
     r=np.sqrt(x**2. + y**2.)
-    gauss=np.exp(-0.5*(-r/3.)**2.)
+    sigma=3.
+    gauss=np.exp(-0.5*(-r/sigma)**2.)
     kern=np.dstack((gauss,gauss,gauss))*blue
     pl.clf(); pl.imshow(np.array(kern,dtype=np.uint8))
 
