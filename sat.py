@@ -1,6 +1,7 @@
 import numpy as np
 from urllib import urlretrieve
 import pdb
+import ipdb
 import matplotlib.pylab as pl
 
 http_base='http://api.tiles.mapbox.com/v2/rkeisler.gh8kebdo/'
@@ -159,12 +160,15 @@ def read_label(prefix):
     return n
 
 
-
-def try_train(prefix='atx', nside=32):
+def load_labeled(prefix='atx', nside=32, quick=True):
+    import cPickle as pickle
+    savename='tmp_train_'+prefix+'_%i'%nside+'.pkl'
+    if quick:
+        X, y = pickle.load(open(savename,'r'))
+        return X, y
     from PIL import Image
     tmp=read_label(prefix)
-    X=[]
-    y=[]
+    X=[]; y=[]
     for name,label in tmp.iteritems():
         img_name = imgpath+name
         img = Image.open(img_name)
@@ -174,27 +178,112 @@ def try_train(prefix='atx', nside=32):
             print img.shape
             pl.imshow(img)
             pdb.set_trace()
-        X.append(img.ravel())
+        X.append(img)
         y.append(label>0)
-    X = np.vstack(np.array(X))
-    y = np.array(y).astype(int)
+    X = np.array(X)
+    y = np.array(y).astype(int)    
+    pickle.dump((X,y), open(savename, 'w'))
+    return X,y
+
+
+def get_features(X_img, ncolors=2):
+    nside=X_img.shape[1]
+    sigmas=np.array([2,4,8,16])*nside/64.
+    colors=[]; 
+    for i in range(ncolors):
+        colors.append(np.array([154, 211,  205]) + np.random.randint(-10,high=10,size=3))
+    x,y=np.mgrid[0:nside,0:nside]-np.mean(np.arange(nside))
+    r=np.sqrt(x**2. + y**2.)
+    fx = np.fft.fft2(X_img, axes=(1,2))
+    features = []
+    for sigma in sigmas:
+        gauss=np.exp(-0.5*(-r/sigma)**2.)
+        gauss/=np.sum(gauss)
+        kern=np.dstack((gauss,gauss,gauss))
+        fkern = np.fft.fft2(kern,axes=(0,1))
+        smx=np.real(np.fft.ifft2((fx*fkern),axes=(1,2)))
+        for color in colors:
+            tmp = np.sum(smx*color,axis=-1)
+            max_tmp = np.max(np.max(tmp,axis=-1),axis=-1)
+            med_tmp = np.median(np.median(tmp,axis=-1),axis=-1)
+            features.append(max_tmp)
+            features.append(med_tmp)
+    features = np.vstack(features).T
+    return features
+
+
+def get_features2(X_img, ncolors=60, thresh=30):
+    nside=X_img.shape[1]
+    sigmas=np.array([5,10])*nside/64.
+
+    # get smoothing kernel
+    x,y=np.mgrid[0:nside,0:nside]-np.mean(np.arange(nside))
+    r=np.sqrt(x**2. + y**2.)
+
+    # get colors
+    colors=[]; 
+    for i in range(ncolors):
+        colors.append(np.array([154, 211,  205]) + np.random.randint(-50,high=40,size=3))
+    features = []
+
+    for color in colors:
+        dist_color = np.sqrt(np.sum((X_img - np.array(color))**2.,axis=-1))
+        ok_color = np.array(dist_color<thresh, dtype=np.float)
+        fok_color = np.fft.fft2(ok_color)
+        for sigma in sigmas:
+            gauss=np.exp(-0.5*(-r/sigma)**2.)
+            gauss/=np.sum(gauss)    
+            fkern = np.fft.fft2(gauss).conjugate()
+            sm_ok_color = np.real(np.fft.ifft2(fok_color*fkern))
+            max_sm = np.max(np.max(sm_ok_color,axis=-1),axis=-1)
+            sum_sm = np.sum(np.sum(sm_ok_color,axis=-1),axis=-1)
+            features.append(max_sm)
+            features.append(sum_sm)
+
+    features = np.vstack(features).T
+    return features    
+
+
+    fx = np.fft.fft2(X_img, axes=(1,2))
+    features = []
+    for sigma in sigmas:
+        gauss=np.exp(-0.5*(-r/sigma)**2.)
+        gauss/=np.sum(gauss)
+        kern=np.dstack((gauss,gauss,gauss))
+        fkern = np.fft.fft2(kern,axes=(0,1))
+        smx=np.real(np.fft.ifft2((fx*fkern),axes=(1,2)))
+        for color in colors:
+            tmp = np.sum(smx*color,axis=-1)
+            max_tmp = np.max(np.max(tmp,axis=-1),axis=-1)
+            med_tmp = np.median(np.median(tmp,axis=-1),axis=-1)
+            features.append(max_tmp)
+            features.append(med_tmp)
+    features = np.vstack(features).T
+
+
+   
+
+def try_train(prefix='atx', nside=32):
+    X_img,y=load_labeled(prefix=prefix,nside=nside)
+    X = get_features2(X_img)
 
     from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
     from sklearn.cross_validation import train_test_split
     from sklearn import metrics
-    from sklearn.dummy import DummyClassifier
-    #rf = DummyClassifier(strategy='stratified')
-    rf = ExtraTreesClassifier(n_estimators=200, n_jobs=6, max_depth=None, max_features=0.01)
-    X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=0.33)
+
+    rf = ExtraTreesClassifier(n_estimators=200, n_jobs=6, max_depth=None, max_features=0.1)
+    X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=0.5)
     print '...fitting...'
     rf.fit(X_train, y_train)
     y_proba = rf.predict_proba(X_test)
     fpr, tpr, thresholds = metrics.roc_curve(y_test, y_proba[:,1])
     auc = metrics.auc(fpr, tpr)
-    pl.clf(); pl.plot(fpr, tpr)
+    pl.clf(); pl.plot(fpr, tpr, 'b-o')
     pl.plot(fpr, fpr/0.065, 'r--'); pl.ylim(0,1); pl.xlim(0,1)
     pl.title('AUC: %0.3f'%auc)
-    pdb.set_trace()
+
+    ipdb.set_trace()
+
         
 def images_to_batches(prefix='atx', nside=32):
     import pickle
@@ -237,5 +326,19 @@ def images_to_batches(prefix='atx', nside=32):
             'data_mean':mean_data[:,np.newaxis],
             'label_names':['notpool','pool']}
     pickle.dump(meta, open('batches/batches.meta', 'w'))    
+
+
+def blue_gaussian():
+    blue = np.array([154, 211,  205]) + np.random.randint(-20,high=20,size=3)
+    nside=64
+    x,y=np.mgrid[0:nside,0:nside]-np.mean(np.arange(nside))
+    r=np.sqrt(x**2. + y**2.)
+    gauss=np.exp(-0.5*(-r/3.)**2.)
+    kern=np.dstack((gauss,gauss,gauss))*blue
+    pl.clf(); pl.imshow(np.array(kern,dtype=np.uint8))
+
+#def viewimage(img):
+               
+               
 
 
