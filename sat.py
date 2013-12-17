@@ -201,7 +201,7 @@ def load_labeled(prefix='atx', nside=32, quick=True):
     return X,y
 
 
-def get_colors(name='pool',ncolors=20, quick=True):
+def get_colors(name='pool',ncolors=10, quick=True):
     import cPickle as pickle
     savename = name+'.pkl'
     if quick: return pickle.load(open(savename,'r'))
@@ -215,13 +215,27 @@ def get_colors(name='pool',ncolors=20, quick=True):
     for i in range(ncolors):
         for base_color in base_colors:
             colors.append(np.array(base_color)+np.random.randint(-30,high=20,size=3))
-            #colors.append(np.array([154, 211,  205]) + np.random.randint(-50,high=30,size=3))
         colors.append(np.random.randint(0,high=255,size=3))
     pickle.dump(colors, open(savename,'w'))
     return colors
     
 
-def get_features(X_img, colors, thresh=20):
+def get_features(X_img, colors, thresh=30, ds=4):
+    nsamp=X_img.shape[0]
+    nside=X_img.shape[1]
+    features = []
+    for color in colors:
+        ok_color = np.product(np.abs(X_img - np.array(color))<thresh,axis=-1)
+        sm_ok_color = ok_color.reshape(nsamp,nside/ds,ds,nside/ds,ds).mean(4).mean(2)
+        max_sm = np.max(np.max(sm_ok_color,axis=-1),axis=-1)
+        sum_sm = np.sum(np.sum(sm_ok_color,axis=-1),axis=-1)
+        features.append(max_sm)
+        features.append(sum_sm)
+    features = np.vstack(features).T
+    return features    
+   
+
+def get_features_works(X_img, colors, thresh=20):
     nside=X_img.shape[1]
     sigmas=np.array([3])*nside/32.
 
@@ -245,18 +259,18 @@ def get_features(X_img, colors, thresh=20):
             features.append(sum_sm)
     features = np.vstack(features).T
     return features    
-   
 
-def try_train(prefix='atx', nside=32):
+def try_train(prefix='atx', nside=32, ds=4, color_thresh=30, doall=False):
     X_img,y=load_labeled(prefix=prefix,nside=nside)
     colors = get_colors(name='pool', quick=True)
-    X = get_features(X_img, colors)
-
+    print '...getting features...'
+    X = get_features(X_img, colors, ds=ds, thresh=color_thresh)
+    print '...done getting features...'
     from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
     from sklearn.cross_validation import train_test_split
     from sklearn import metrics
 
-    rf = ExtraTreesClassifier(n_estimators=200, n_jobs=6, max_features=0.01)
+    rf = ExtraTreesClassifier(n_estimators=200, n_jobs=6, max_features=0.05)
     X_train, X_test, y_train, y_test, img_train, img_test = train_test_split(X,y,X_img,test_size=0.5)
     print '...fitting...'
     rf.fit(X_train, y_train)
@@ -271,7 +285,10 @@ def try_train(prefix='atx', nside=32):
     wh_missed=np.where((y_proba<prob_thresh)&(y_test==1))[0]
     wh_ok=np.where((y_proba>prob_thresh)&(y_test==1))[0]
 
-    xx,yy,proba = predict_proba_all(rf, colors)
+    if doall:
+        xx,yy,proba = predict_proba_all(rf, colors)
+        import cPickle as pickle
+        pickle.dump((xx,yy,proba),open('all_'+prefix+'.pkl','w'))
 
     ipdb.set_trace()
 
@@ -379,11 +396,11 @@ def write_to_csv():
     wh=np.where(proba>0.4)[0]
     print len(wh)
     lat, lon = xyz_to_latlong(x[wh], y[wh], 19)
-    dlat, dlon = xyz_to_latlong(np.array([0,1]), np.array([0,1]), 19)
-    print lat[0]
+    medx=int(np.median(x))
+    medy=int(np.median(y))
+    dlat, dlon = xyz_to_latlong(np.array([medx,medx+1]), np.array([medy,medy+1]), 19)
     lat -= (0.5*(max(dlat)-min(dlat)))
     lon += (0.5*(max(dlon)-min(dlon)))
-    print lat[0]
     file=open('atx_pools.csv','w')
     file.write('lat,lon\n')
     for this_lat, this_lon in zip(lat,lon):
