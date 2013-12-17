@@ -186,47 +186,35 @@ def load_labeled(prefix='atx', nside=32, quick=True):
     return X,y
 
 
-def get_features(X_img, ncolors=2):
-    nside=X_img.shape[1]
-    sigmas=np.array([4,8,16])*nside/32.
+def get_colors(name='pool',ncolors=20, quick=True):
+    import cPickle as pickle
+    savename = name+'.pkl'
+    if quick: return pickle.load(open(savename,'r'))
+    if name=='pool':
+        base_colors = [[154, 211, 210], 
+                       [104, 148, 156],
+                       [70, 160, 162],
+                       [93, 152, 140],
+                       [58, 104, 99]]
     colors=[]; 
     for i in range(ncolors):
-        colors.append(np.array([154, 211,  205]) + np.random.randint(-10,high=10,size=3))
-    x,y=np.mgrid[0:nside,0:nside]-np.mean(np.arange(nside))
-    r=np.sqrt(x**2. + y**2.)
-    fx = np.fft.fft2(X_img, axes=(1,2))
-    features = []
-    for sigma in sigmas:
-        gauss=np.exp(-0.5*(-r/sigma)**2.)
-        gauss/=np.sum(gauss)
-        kern=np.dstack((gauss,gauss,gauss))
-        fkern = np.fft.fft2(kern,axes=(0,1))
-        smx=np.real(np.fft.ifft2((fx*fkern),axes=(1,2)))
-        for color in colors:
-            tmp = np.sum(smx*color,axis=-1)
-            max_tmp = np.max(np.max(tmp,axis=-1),axis=-1)
-            med_tmp = np.median(np.median(tmp,axis=-1),axis=-1)
-            features.append(max_tmp)
-            features.append(med_tmp)
-    features = np.vstack(features).T
-    return features
+        for base_color in base_colors:
+            colors.append(np.array(base_color)+np.random.randint(-30,high=20,size=3))
+            #colors.append(np.array([154, 211,  205]) + np.random.randint(-50,high=30,size=3))
+        colors.append(np.random.randint(0,high=255,size=3))
+    pickle.dump(colors, open(savename,'w'))
+    return colors
+    
 
-
-def get_features2(X_img, ncolors=40, thresh=20):
+def get_features(X_img, colors, thresh=20):
     nside=X_img.shape[1]
-    sigmas=np.array([1,3,5])*nside/32.
+    sigmas=np.array([3])*nside/32.
 
     # get smoothing kernel
     x,y=np.mgrid[0:nside,0:nside]-np.mean(np.arange(nside))
     r=np.sqrt(x**2. + y**2.)
 
-    # get colors
-    colors=[]; 
-    for i in range(ncolors):
-        colors.append(np.array([154, 211,  205]) + np.random.randint(-50,high=30,size=3))
-        colors.append(np.random.randint(0,high=255,size=3))
     features = []
-
     for color in colors:
         dist_color = np.sqrt(np.sum((X_img - np.array(color))**2.,axis=-1))
         ok_color = np.array(dist_color<thresh, dtype=np.float)
@@ -240,53 +228,43 @@ def get_features2(X_img, ncolors=40, thresh=20):
             sum_sm = np.sum(np.sum(sm_ok_color,axis=-1),axis=-1)
             features.append(max_sm)
             features.append(sum_sm)
-
     features = np.vstack(features).T
     return features    
-
-
-    fx = np.fft.fft2(X_img, axes=(1,2))
-    features = []
-    for sigma in sigmas:
-        gauss=np.exp(-0.5*(-r/sigma)**2.)
-        gauss/=np.sum(gauss)
-        kern=np.dstack((gauss,gauss,gauss))
-        fkern = np.fft.fft2(kern,axes=(0,1))
-        smx=np.real(np.fft.ifft2((fx*fkern),axes=(1,2)))
-        for color in colors:
-            tmp = np.sum(smx*color,axis=-1)
-            max_tmp = np.max(np.max(tmp,axis=-1),axis=-1)
-            med_tmp = np.median(np.median(tmp,axis=-1),axis=-1)
-            features.append(max_tmp)
-            features.append(med_tmp)
-    features = np.vstack(features).T
-
-
    
 
 def try_train(prefix='atx', nside=32):
     X_img,y=load_labeled(prefix=prefix,nside=nside)
-    X = get_features2(X_img)
+    colors = get_colors(name='pool', quick=True)
+    X = get_features(X_img, colors)
 
     from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
     from sklearn.cross_validation import train_test_split
     from sklearn import metrics
 
-    rf = ExtraTreesClassifier(n_estimators=200, n_jobs=6, max_depth=None, max_features=0.05)
-    X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=0.9)
+    rf = ExtraTreesClassifier(n_estimators=200, n_jobs=6, max_features=0.01)
+    X_train, X_test, y_train, y_test, img_train, img_test = train_test_split(X,y,X_img,test_size=0.5)
     print '...fitting...'
     rf.fit(X_train, y_train)
-    y_proba = rf.predict_proba(X_test)
-    fpr, tpr, thresholds = metrics.roc_curve(y_test, y_proba[:,1])
+    y_proba = rf.predict_proba(X_test)[:,1]
+    fpr, tpr, thresholds = metrics.roc_curve(y_test, y_proba)
     auc = metrics.auc(fpr, tpr)
     pl.clf(); pl.plot(fpr, tpr, 'b-o')
     pl.plot(fpr, fpr/0.065, 'r--'); pl.ylim(0,1); pl.xlim(0,1)
     pl.title('AUC: %0.3f'%auc)
 
+    prob_thresh=0.6
+    wh_missed=np.where((y_proba<prob_thresh)&(y_test==1))[0]
+    wh_ok=np.where((y_proba>prob_thresh)&(y_test==1))[0]
+
+    xx,yy,proba = predict_proba_all(rf, colors)
+
     ipdb.set_trace()
 
+def iimshow(img):
+    pl.clf(); pl.imshow(np.array(img,dtype=np.uint8))
         
 def images_to_batches(prefix='atx', nside=32):
+    # used to make batches for cuda-convnet.
     import pickle
     from glob import glob
     from PIL import Image
@@ -305,12 +283,10 @@ def images_to_batches(prefix='atx', nside=32):
         y.append(label>0)
     X = np.vstack(np.array(X))
     y = np.array(y).astype(int)
-
     nbatches = 2
     nimg_total, nfeatures = X.shape
     nimg_per_batch = np.floor(1.*nimg_total/nbatches)
     system('rm batches/data_batch*')
-
     global_counter = -1
     sum_data = np.zeros(nfeatures)
     for ibatch in np.arange(nbatches):
@@ -340,8 +316,44 @@ def blue_gaussian():
     kern=np.dstack((gauss,gauss,gauss))*blue
     pl.clf(); pl.imshow(np.array(kern,dtype=np.uint8))
 
-#def viewimage(img):
+
                
-               
+def predict_proba_all(classifier, colors, prefix='atx', batchsize=1000, nside=32):
+    from glob import glob
+    from PIL import Image
+    files = glob(imgpath+prefix+'*.png')
+    np.random.shuffle(files)
+    nfiles = len(files)
+    #nbatches=2 #tmpp
+    nbatches = np.ceil(1.*nfiles/batchsize).astype(int)
+    x=[]; y=[]; proba=[]
+    for ibatch in range(nbatches):
+        print ibatch,nbatches
+        imgs = []
+        imin=ibatch*batchsize
+        imax=np.min([(ibatch+1)*batchsize, nfiles])
+        # load and resize these images
+        for file in files[imin:imax]:
+            img = Image.open(file)
+            if nside!=256: img=img.resize((nside,nside),Image.ANTIALIAS)
+            img = np.array(img)
+            imgs.append(img)
+            xtmp, ytmp, ztmp = xyz_from_filename(file)
+            x.append(xtmp)
+            y.append(ytmp)
+        this_X = get_features(np.array(imgs), colors)
+        this_proba = classifier.predict_proba(this_X)[:,1]
+        proba.append(this_proba)
+    proba=np.hstack(proba)
+    x=np.array(x)
+    y=np.array(y)
+    return x,y,proba
 
 
+
+def xyz_from_filename(filename):
+    tmp=filename.split('/')[-1]
+    xtmp = int(tmp.split('x')[-1].split('_')[0].split('.')[0])
+    ytmp = int(tmp.split('y')[-1].split('_')[0].split('.')[0])
+    ztmp = int(tmp.split('z')[-1].split('_')[0].split('.')[0])
+    return xtmp, ytmp, ztmp
