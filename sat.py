@@ -19,6 +19,21 @@ def latlong_to_xyz(lat_deg, lon_deg, zoom):
     ytile = n * (1 - (np.log(np.tan(lat_rad) + 1./np.cos(lat_rad)) / np.pi)) / 2.
     return int(xtile), int(ytile), zoom
 
+def xyz_to_latlong(x, y, zoom):
+  n = 2.0 ** zoom
+  lon_deg = x / n * 360.0 - 180.0
+  lat_rad = np.arctan(np.sinh(np.pi * (1 - 2 * y / n)))
+  lat_deg = np.degrees(lat_rad)
+  return (lat_deg, lon_deg)
+
+def latlong_to_xyz(lat_deg, lon_deg, zoom):
+    lat_rad = lat_deg*np.pi/180.
+    lon_rad = lon_deg*np.pi/180.
+    n = 2. ** zoom
+    xtile = n * ((lon_deg + 180) / 360)
+    ytile = n * (1 - (np.log(np.tan(lat_rad) + 1./np.cos(lat_rad)) / np.pi)) / 2.
+    return int(xtile), int(ytile), zoom
+
 def xyz_to_ZXY_string(x,y,z):
     return '%i/%i/%i'%(z,x,y)
 
@@ -357,3 +372,23 @@ def xyz_from_filename(filename):
     ytmp = int(tmp.split('y')[-1].split('_')[0].split('.')[0])
     ztmp = int(tmp.split('z')[-1].split('_')[0].split('.')[0])
     return xtmp, ytmp, ztmp
+
+def write_to_csv():
+    import cPickle as pickle
+    x,y,proba=pickle.load(open('atx_all.pkl','r'))
+    wh=np.where(proba>0.4)[0]
+    print len(wh)
+    lat, lon = xyz_to_latlong(x[wh], y[wh], 19)
+    dlat, dlon = xyz_to_latlong(np.array([0,1]), np.array([0,1]), 19)
+    print lat[0]
+    lat -= (0.5*(max(dlat)-min(dlat)))
+    lon += (0.5*(max(dlon)-min(dlon)))
+    print lat[0]
+    file=open('atx_pools.csv','w')
+    file.write('lat,lon\n')
+    for this_lat, this_lon in zip(lat,lon):
+        file.write('%0.7f,%0.7f'%(this_lat, this_lon)+'\n')
+    file.close()
+               
+
+    
