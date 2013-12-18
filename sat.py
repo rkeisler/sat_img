@@ -1,15 +1,20 @@
 import numpy as np
 from urllib import urlretrieve
-import pdb
 import ipdb
 import matplotlib.pylab as pl
 
 http_base='http://api.tiles.mapbox.com/v2/rkeisler.gh8kebdo/'
-#savepath='/farmshare/user_data/rkeisler/img/'
 basepath = '/Users/rkeisler/Desktop/satellite/'
 imgpath = basepath+'img/'
 labelpath = basepath+'label/'
 
+def do_everything():
+    download_chunk('atx',19)
+    label_data('atx', size=2000)
+    get_colors(name='pool',ncolors=10, quick=False)
+    rf, colors = train_classifier(prefix='atx', nside=32, ds=4, color_thresh=30)
+    xtile, ytile, proba = predict_proba_all(rf, colors)
+    write_to_csv(xtile, ytile, proba, 'atx')    
 
 def latlong_to_xyz(lat_deg, lon_deg, zoom):
     lat_rad = lat_deg*np.pi/180.
@@ -53,6 +58,16 @@ def latlong_rectange_to_xyz(lat1, lat2, lon1, lon2, zoom):
 def xyz_to_savename(x,y,z,prefix='tmp'):
     return prefix+'_x%i_y%i_z%i'%(x,y,z)+'.png'
 
+def xyz_from_filename(filename):
+    tmp=filename.split('/')[-1]
+    xtmp = int(tmp.split('x')[-1].split('_')[0].split('.')[0])
+    ytmp = int(tmp.split('y')[-1].split('_')[0].split('.')[0])
+    ztmp = int(tmp.split('z')[-1].split('_')[0].split('.')[0])
+    return xtmp, ytmp, ztmp
+
+def hms_to_deg(hour, min, sec):
+    return np.sign(hour)*(np.abs(hour)+min/60.+sec/3600.)
+
 def download_one(x,y,zoom,prefix='tmp'):
     url=http_base+xyz_to_ZXY_string(x,y,zoom)+'.png'
     savename=imgpath+xyz_to_savename(x,y,zoom,prefix=prefix)
@@ -82,13 +97,9 @@ def download_rectangle(lat1, lat2, lon1, lon2,
         print '%i/%i'%(x_count,n_x)
         for y_tmp in range(y_min, y_max):
             download_one(x_tmp,y_tmp,zoom,prefix=prefix)
-    return
+
 
 def define_chunk(name):
-    sf1=dict(prefix='sf1',
-             lat1=30.0, lax_max=30.1, 
-             lon1=-50.0, lon2=-49.9)
-
     chi=dict(prefix='chi', 
              lat1=hms_to_deg(41,46,24.77),
              lat2=hms_to_deg(41,59,51.98),
@@ -103,19 +114,13 @@ def define_chunk(name):
     chunks=dict(sf1=sf1, chi=chi, atx=atx)
     return chunks[name]
 
-def hms_to_deg(hour, min, sec):
-    return np.sign(hour)*(np.abs(hour)+min/60.+sec/3600.)
-
-    
+ 
 def label_data(prefix, size=100, savename=None):
     from glob import glob
     from os.path import basename
     from PIL import Image
     from os.path import isfile
-    
     if savename==None: savename=labelpath+'label_'+prefix+'.txt'
-
-
     # We want to avoid labeling an image twice, so keep track
     # of what we've labeled in previous labeling sessions.
     if isfile(savename):
@@ -123,7 +128,6 @@ def label_data(prefix, size=100, savename=None):
         already_seen = [line.split(',')[0] for line in fileout]
         fileout.close()
     else: already_seen = []
-
     # Now reopen the file for appending.
     fileout = open(savename,'a')
     pl.ion()
@@ -174,10 +178,9 @@ def read_label(prefix):
     file.close()
     return n
 
-
 def load_labeled(prefix='atx', nside=32, quick=False):
     import cPickle as pickle
-    savename='tmp_train_'+prefix+'_%i'%nside+'.pkl'
+    savename=basepath+'tmp_train_'+prefix+'_%i'%nside+'.pkl'
     if quick:
         X, y = pickle.load(open(savename,'r'))
         return X, y
@@ -203,7 +206,7 @@ def load_labeled(prefix='atx', nside=32, quick=False):
 
 def get_colors(name='pool',ncolors=10, quick=True):
     import cPickle as pickle
-    savename = name+'.pkl'
+    savename = basepath+name+'.pkl'
     if quick: return pickle.load(open(savename,'r'))
     if name=='pool':
         base_colors = [[154, 211, 210], 
@@ -211,6 +214,12 @@ def get_colors(name='pool',ncolors=10, quick=True):
                        [70, 160, 162],
                        [93, 152, 140],
                        [58, 104, 99]]
+    if name=='cab':
+        base_colors = [[214, 168, 142],
+                       [199, 202, 195],
+                       [217, 191, 170],
+                       [178, 165, 133],
+                       [215, 203, 165]]
     colors=[]; 
     for i in range(ncolors):
         for base_color in base_colors:
@@ -234,35 +243,11 @@ def get_features(X_img, colors, thresh=30, ds=4):
     features = np.vstack(features).T
     return features    
    
-
-def get_features_works(X_img, colors, thresh=20):
-    nside=X_img.shape[1]
-    sigmas=np.array([3])*nside/32.
-
-    # get smoothing kernel
-    x,y=np.mgrid[0:nside,0:nside]-np.mean(np.arange(nside))
-    r=np.sqrt(x**2. + y**2.)
-
-    features = []
-    for color in colors:
-        dist_color = np.sqrt(np.sum((X_img - np.array(color))**2.,axis=-1))
-        ok_color = np.array(dist_color<thresh, dtype=np.float)
-        fok_color = np.fft.fft2(ok_color)
-        for sigma in sigmas:
-            gauss=np.exp(-0.5*(-r/sigma)**2.)
-            gauss/=np.sum(gauss)    
-            fkern = np.fft.fft2(gauss).conjugate()
-            sm_ok_color = np.real(np.fft.ifft2(fok_color*fkern))
-            max_sm = np.max(np.max(sm_ok_color,axis=-1),axis=-1)
-            sum_sm = np.sum(np.sum(sm_ok_color,axis=-1),axis=-1)
-            features.append(max_sm)
-            features.append(sum_sm)
-    features = np.vstack(features).T
-    return features    
-
-def try_train(prefix='atx', nside=32, ds=4, color_thresh=30, doall=False):
-    X_img,y=load_labeled(prefix=prefix,nside=nside,quick=True)
-    colors = get_colors(name='pool', quick=True)
+def train_classifier(prefix='atx', nside=32, ds=4, color_thresh=30, test_size=0.5):
+    X_img,y=load_labeled(prefix=prefix,nside=nside,quick=False)
+    if prefix=='atx': color_name='pool'
+    if prefix=='chi': color_name='cab'
+    colors = get_colors(name=color_name, quick=True)
     print '...getting features...'
     X = get_features(X_img, colors, ds=ds, thresh=color_thresh)
     print '...done getting features...'
@@ -270,90 +255,26 @@ def try_train(prefix='atx', nside=32, ds=4, color_thresh=30, doall=False):
     from sklearn.cross_validation import train_test_split
     from sklearn import metrics
 
-    rf = ExtraTreesClassifier(n_estimators=200, n_jobs=6, max_features=0.05)
-    if doall: test_size=0.1
-    else: test_size=0.5
+    rf = ExtraTreesClassifier(n_estimators=200, n_jobs=6, max_features=0.02)
     X_train, X_test, y_train, y_test, img_train, img_test = train_test_split(X,y,X_img,test_size=0.5)
     print '...fitting...'
     rf.fit(X_train, y_train)
     y_proba = rf.predict_proba(X_test)[:,1]
     fpr, tpr, thresholds = metrics.roc_curve(y_test, y_proba)
     auc = metrics.auc(fpr, tpr)
-    if not(doall):
-        pl.clf(); pl.plot(fpr, tpr, 'b-o')
-        pl.plot(fpr, fpr/0.065, 'r--'); pl.ylim(0,1); pl.xlim(0,1)
-        pl.title('AUC: %0.3f'%auc)
+
+    pl.clf(); pl.plot(fpr, tpr, 'b-o')
+    pl.plot(fpr, fpr/np.mean(y), 'r--'); pl.ylim(0,1); pl.xlim(0,1)
+    pl.title('AUC: %0.3f'%auc)
 
     for i,th in enumerate(thresholds): print th,tpr[i],tpr[i]/fpr[i]
     prob_thresh=0.6
     wh_missed=np.where((y_proba<prob_thresh)&(y_test==1))[0]
     wh_ok=np.where((y_proba>prob_thresh)&(y_test==1))[0]
 
-    if doall:
-        xx,yy,proba = predict_proba_all(rf, colors)
-        import cPickle as pickle
-        pickle.dump((xx,yy,proba),open('all_'+prefix+'.pkl','w'))
-
-    ipdb.set_trace()
-
 def iimshow(img):
     pl.clf(); pl.imshow(np.array(img,dtype=np.uint8))
         
-def images_to_batches(prefix='atx', nside=32):
-    # used to make batches for cuda-convnet.
-    import pickle
-    from glob import glob
-    from PIL import Image
-    from os import system
-    tmp=read_label(prefix)
-    X=[]
-    y=[]
-    for name,label in tmp.iteritems():
-        img_name = imgpath+name
-        img = Image.open(img_name)
-        if nside!=256: img=img.resize((nside,nside),Image.ANTIALIAS)
-        img = np.array(img)
-        img = np.rollaxis(img, 2)  # only for cuda convnet
-        img = img.reshape(-1)
-        X.append(img)
-        y.append(label>0)
-    X = np.vstack(np.array(X))
-    y = np.array(y).astype(int)
-    nbatches = 2
-    nimg_total, nfeatures = X.shape
-    nimg_per_batch = np.floor(1.*nimg_total/nbatches)
-    system('rm batches/data_batch*')
-    global_counter = -1
-    sum_data = np.zeros(nfeatures)
-    for ibatch in np.arange(nbatches):
-        data = np.array(X[ibatch*nimg_per_batch:(ibatch+1)*nimg_per_batch], dtype=np.float).T
-        labels = y[ibatch*nimg_per_batch:(ibatch+1)*nimg_per_batch]
-        sum_data += np.sum(data,axis=1)
-        print '...dumping...'
-        output = {'data':np.array(data,dtype=np.uint8),
-                  'labels':list(np.array(labels, dtype=np.int))}
-        pickle.dump(output, open('batches/data_batch_%i'%ibatch, 'w'))
-    mean_data = 1.*sum_data/nbatches/nimg_per_batch
-    meta = {'num_cases_per_batch':nimg_per_batch, 
-            'num_vis':nfeatures, 
-            'data_mean':mean_data[:,np.newaxis],
-            'label_names':['notpool','pool']}
-    pickle.dump(meta, open('batches/batches.meta', 'w'))    
-
-
-def blue_gaussian():
-    blue = np.array([154, 211,  205]) + np.random.randint(-150,high=30,size=3)
-    blue = np.random.randint(0,high=255,size=3)
-    nside=32
-    x,y=np.mgrid[0:nside,0:nside]-np.mean(np.arange(nside))
-    r=np.sqrt(x**2. + y**2.)
-    sigma=3.
-    gauss=np.exp(-0.5*(-r/sigma)**2.)
-    kern=np.dstack((gauss,gauss,gauss))*blue
-    pl.clf(); pl.imshow(np.array(kern,dtype=np.uint8))
-
-
-               
 def predict_proba_all(classifier, colors, prefix='atx', batchsize=1000, nside=32):
     from glob import glob
     from PIL import Image
@@ -385,23 +306,14 @@ def predict_proba_all(classifier, colors, prefix='atx', batchsize=1000, nside=32
     y=np.array(y)
     return x,y,proba
 
-
-
-def xyz_from_filename(filename):
-    tmp=filename.split('/')[-1]
-    xtmp = int(tmp.split('x')[-1].split('_')[0].split('.')[0])
-    ytmp = int(tmp.split('y')[-1].split('_')[0].split('.')[0])
-    ztmp = int(tmp.split('z')[-1].split('_')[0].split('.')[0])
-    return xtmp, ytmp, ztmp
-
-def write_to_csv(prefix, proba_cut=0.4):
-    import cPickle as pickle
-    x,y,proba=pickle.load(open(prefix+'_all.pkl','r'))
+def write_to_csv(xtile,ytile,proba, proba_cut=0.4):
+    #import cPickle as pickle
+    #xtile,ytile,proba=pickle.load(open(prefix+'_all.pkl','r'))
     wh=np.where(proba>proba_cut)[0]
     print len(wh)
-    lat, lon = xyz_to_latlong(x[wh], y[wh], 19)
-    medx=int(np.median(x))
-    medy=int(np.median(y))
+    lat, lon = xyz_to_latlong(xtile[wh], ytile[wh], 19)
+    medx=int(np.median(xtile))
+    medy=int(np.median(ytile))
     dlat, dlon = xyz_to_latlong(np.array([medx,medx+1]), np.array([medy,medy+1]), 19)
     lat -= (0.5*(max(dlat)-min(dlat)))
     lon += (0.5*(max(dlon)-min(dlon)))
@@ -410,6 +322,3 @@ def write_to_csv(prefix, proba_cut=0.4):
     for this_lat, this_lon in zip(lat,lon):
         file.write('%0.7f,%0.7f'%(this_lat, this_lon)+'\n')
     file.close()
-               
-
-    
