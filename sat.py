@@ -100,18 +100,12 @@ def download_rectangle(lat1, lat2, lon1, lon2,
 
 
 def define_chunk(name):
-    chi=dict(prefix='chi', 
-             lat1=hms_to_deg(41,46,24.77),
-             lat2=hms_to_deg(41,59,51.98),
-             lon1=hms_to_deg(-87,43,44.02),
-             lon2=hms_to_deg(-87,33,53.51))
-
     atx=dict(prefix='atx',
              lat1=hms_to_deg(30,20,21.95),
              lat2=hms_to_deg(30,12,32.97),
              lon1=hms_to_deg(-97,50,33.81),
              lon2=hms_to_deg(-97,38,12.31))
-    chunks=dict(sf1=sf1, chi=chi, atx=atx)
+    chunks=dict(atx=atx)
     return chunks[name]
 
  
@@ -214,12 +208,6 @@ def get_colors(name='pool',ncolors=10, quick=True):
                        [70, 160, 162],
                        [93, 152, 140],
                        [58, 104, 99]]
-    if name=='cab':
-        base_colors = [[214, 168, 142],
-                       [199, 202, 195],
-                       [217, 191, 170],
-                       [178, 165, 133],
-                       [215, 203, 165]]
     colors=[]; 
     for i in range(ncolors):
         for base_color in base_colors:
@@ -246,7 +234,6 @@ def get_features(X_img, colors, thresh=30, ds=4):
 def train_classifier(prefix='atx', nside=32, ds=4, color_thresh=30, test_size=0.5):
     X_img,y=load_labeled(prefix=prefix,nside=nside,quick=False)
     if prefix=='atx': color_name='pool'
-    if prefix=='chi': color_name='cab'
     colors = get_colors(name=color_name, quick=True)
     print '...getting features...'
     X = get_features(X_img, colors, ds=ds, thresh=color_thresh)
