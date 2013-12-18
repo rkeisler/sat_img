@@ -175,7 +175,7 @@ def read_label(prefix):
     return n
 
 
-def load_labeled(prefix='atx', nside=32, quick=True):
+def load_labeled(prefix='atx', nside=32, quick=False):
     import cPickle as pickle
     savename='tmp_train_'+prefix+'_%i'%nside+'.pkl'
     if quick:
@@ -261,7 +261,7 @@ def get_features_works(X_img, colors, thresh=20):
     return features    
 
 def try_train(prefix='atx', nside=32, ds=4, color_thresh=30, doall=False):
-    X_img,y=load_labeled(prefix=prefix,nside=nside)
+    X_img,y=load_labeled(prefix=prefix,nside=nside,quick=True)
     colors = get_colors(name='pool', quick=True)
     print '...getting features...'
     X = get_features(X_img, colors, ds=ds, thresh=color_thresh)
@@ -271,16 +271,20 @@ def try_train(prefix='atx', nside=32, ds=4, color_thresh=30, doall=False):
     from sklearn import metrics
 
     rf = ExtraTreesClassifier(n_estimators=200, n_jobs=6, max_features=0.05)
+    if doall: test_size=0.1
+    else: test_size=0.5
     X_train, X_test, y_train, y_test, img_train, img_test = train_test_split(X,y,X_img,test_size=0.5)
     print '...fitting...'
     rf.fit(X_train, y_train)
     y_proba = rf.predict_proba(X_test)[:,1]
     fpr, tpr, thresholds = metrics.roc_curve(y_test, y_proba)
     auc = metrics.auc(fpr, tpr)
-    pl.clf(); pl.plot(fpr, tpr, 'b-o')
-    pl.plot(fpr, fpr/0.065, 'r--'); pl.ylim(0,1); pl.xlim(0,1)
-    pl.title('AUC: %0.3f'%auc)
+    if not(doall):
+        pl.clf(); pl.plot(fpr, tpr, 'b-o')
+        pl.plot(fpr, fpr/0.065, 'r--'); pl.ylim(0,1); pl.xlim(0,1)
+        pl.title('AUC: %0.3f'%auc)
 
+    for i,th in enumerate(thresholds): print th,tpr[i],tpr[i]/fpr[i]
     prob_thresh=0.6
     wh_missed=np.where((y_proba<prob_thresh)&(y_test==1))[0]
     wh_ok=np.where((y_proba>prob_thresh)&(y_test==1))[0]
@@ -390,10 +394,10 @@ def xyz_from_filename(filename):
     ztmp = int(tmp.split('z')[-1].split('_')[0].split('.')[0])
     return xtmp, ytmp, ztmp
 
-def write_to_csv():
+def write_to_csv(prefix, proba_cut=0.4):
     import cPickle as pickle
-    x,y,proba=pickle.load(open('atx_all.pkl','r'))
-    wh=np.where(proba>0.4)[0]
+    x,y,proba=pickle.load(open(prefix+'_all.pkl','r'))
+    wh=np.where(proba>proba_cut)[0]
     print len(wh)
     lat, lon = xyz_to_latlong(x[wh], y[wh], 19)
     medx=int(np.median(x))
@@ -401,7 +405,7 @@ def write_to_csv():
     dlat, dlon = xyz_to_latlong(np.array([medx,medx+1]), np.array([medy,medy+1]), 19)
     lat -= (0.5*(max(dlat)-min(dlat)))
     lon += (0.5*(max(dlon)-min(dlon)))
-    file=open('atx_pools.csv','w')
+    file=open(prefix+'.csv','w')
     file.write('lat,lon\n')
     for this_lat, this_lon in zip(lat,lon):
         file.write('%0.7f,%0.7f'%(this_lat, this_lon)+'\n')
