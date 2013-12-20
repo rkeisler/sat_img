@@ -40,7 +40,7 @@ def latlong_to_xyz(lat_deg, lon_deg, zoom):
     return int(xtile), int(ytile), zoom
 
 def xyz_to_ZXY_string(x,y,z):
-    return '%i/%i/%i'%(z,x,y)
+    return '%i/%i/%i'%(z,x,y)+'.png'
 
 def latlong_to_ZXY_string(lat_deg, lon_deg, zoom):
     x,y,z = latlong_to_xyz(lat_deg, lon_deg, zoom)
@@ -294,8 +294,6 @@ def predict_proba_all(classifier, colors, prefix='atx', batchsize=1000, nside=32
     return x,y,proba
 
 def write_to_csv(xtile,ytile,proba, proba_cut=0.4):
-    #import cPickle as pickle
-    #xtile,ytile,proba=pickle.load(open(prefix+'_all.pkl','r'))
     wh=np.where(proba>proba_cut)[0]
     print len(wh)
     lat, lon = xyz_to_latlong(xtile[wh], ytile[wh], 19)
@@ -309,3 +307,6 @@ def write_to_csv(xtile,ytile,proba, proba_cut=0.4):
     for this_lat, this_lon in zip(lat,lon):
         file.write('%0.7f,%0.7f'%(this_lat, this_lon)+'\n')
     file.close()
+
+
+    
