@@ -3,7 +3,12 @@ from urllib import urlretrieve
 import ipdb
 import matplotlib.pylab as pl
 
+# Create your own satellite-image-only map on mapbox.  
+# I deleted the following one to prevent future charges, 
+# but the address should look something like this.
 http_base='http://api.tiles.mapbox.com/v2/rkeisler.gh8kebdo/'
+
+# Define the path for saving stuff.
 basepath = '/Users/rkeisler/Desktop/satellite/'
 imgpath = basepath+'img/'
 labelpath = basepath+'label/'
