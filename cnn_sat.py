@@ -23,6 +23,9 @@ def load_labels():
 def make_train_and_val_listfiles(frac_val=0.2):
     from glob import glob
     label_dict = load_labels()
+    labels = label_dict.values()
+    frac_pos = 1.*np.sum(labels) / len(labels)
+    print frac_pos
     filenames = label_dict.keys()
     np.random.shuffle(filenames)
     train_labels = []
@@ -31,13 +34,19 @@ def make_train_and_val_listfiles(frac_val=0.2):
     n_pos_val = 0
     n_pos_train = 0
     for filename in filenames:
-        this_label = label_dict[filename]
-        this_name = 'data/atx/%s'%filename
         # format is subfolder1/file1.JPEG 7
+        this_label = label_dict[filename]
+        this_name = 'atx/%s'%filename
+
         if (np.random.random()<frac_val):
+            # validation
             f_val.write('%s %i\n'%(this_name, this_label))
             n_pos_val += this_label
         else:
+            # training
+            # balance the training set.
+            # i.e. if this is a negative instance, throw it out with some probability.
+            if ((this_label==0) & (np.random.random() > frac_pos)): continue
             f_train.write('%s %i\n'%(this_name, this_label))
             train_labels.append(this_label)
             n_pos_train += this_label

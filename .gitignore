@@ -1,3 +1,7 @@
+*train_mean_image*
+*caffemodel*
+*solverstate*
+*lmdb*
 data/atx
 *pyc
 *~
