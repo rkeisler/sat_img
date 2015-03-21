@@ -67,5 +67,22 @@ def zip_train_val():
    from os import system
    system(command)
 
+
+def zip_train_to_metamind():
+    # load the 50/50-balanced training data.
+    f = open('data/train_listfile','r')
+    import os
+    for this_dir in ['mm','mm/0','mm/1']:
+        if not os.path.exists(this_dir):
+            os.makedirs(this_dir)
+    for line in f:
+        tmp = line.split(' ')
+        if '0' in tmp[1].rstrip():
+            os.system('cp data/%s mm/0/'%tmp[0].strip())
+        else:
+            os.system('cp data/%s mm/1/'%tmp[0].strip())        
+
+
 if __name__ == '__main__':
     main()
+
